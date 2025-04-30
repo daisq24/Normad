@@ -1,0 +1,3 @@
+regex:.env$
+regex:ENV.example$
+regex:ENV.example.safe$ 

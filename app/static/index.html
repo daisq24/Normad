@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NomadNavigator AI - 数字游民的智能旅行伙伴</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #0078d4;
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .tagline {
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+        .features {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin: 40px 0;
+        }
+        .feature {
+            flex: 0 0 30%;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .feature h3 {
+            color: #0078d4;
+        }
+        .chat-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            height: 500px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        footer {
+            text-align: center;
+            padding: 20px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+        #webchat {
+            height: 100%;
+        }
+        .chat-placeholder {
+            display: none; /* 隐藏占位符，因为我们现在启用了真正的聊天功能 */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            color: #666;
+            background-color: #f9f9f9;
+        }
+        #botStatus {
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 14px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>NomadNavigator AI</h1>
+            <div class="tagline">您的数字游民智能旅行规划助手</div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="features">
+            <div class="feature">
+                <h3>旅行规划</h3>
+                <p>根据您的预算、兴趣和时间安排，智能推荐最适合的数字游民目的地。</p>
+            </div>
+            <div class="feature">
+                <h3>签证管理</h3>
+                <p>提供准确的签证信息、停留时间限制和申请要求，帮助您合规旅行。</p>
+            </div>
+            <div class="feature">
+                <h3>生活成本分析</h3>
+                <p>比较不同城市的住宿、餐饮和交通费用，找到最适合您预算的地点。</p>
+            </div>
+        </div>
+        
+        <h2>开始与NomadNavigator聊天</h2>
+        <div id="botStatus">正在连接到NomadNavigator AI...</div>
+        <div class="chat-container">
+            <!-- 真实聊天界面 -->
+            <div id="webchat"></div>
+            
+            <!-- 聊天界面占位符 -->
+            <div class="chat-placeholder">
+                <div class="icon">💬</div>
+                <h3>AI助手已准备就绪</h3>
+                <p>您可以询问关于数字游民的任何问题，例如：</p>
+                <p>"推荐几个适合数字游民的东南亚城市"</p>
+                <p>"泰国签证有哪些类型？"</p>
+                <p>"月预算2000美元，哪些欧洲城市适合长期居住？"</p>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 NomadNavigator AI. 基于Azure AI服务构建。</p>
+        </div>
+    </footer>
+
+    <!-- Bot Framework Web Chat脚本，已启用 -->
+    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+    <script>
+        const statusElement = document.getElementById('botStatus');
+        
+        // 更新状态的辅助函数
+        function updateStatus(message, isError = false) {
+            statusElement.textContent = message;
+            statusElement.style.backgroundColor = isError ? '#ffeeee' : '#eeffee';
+            statusElement.style.color = isError ? '#cc0000' : '#006600';
+            console.log(message);
+        }
+
+        // 使用直接连接而不是通过Secret获取Token
+        updateStatus('正在连接到Bot服务...');
+
+        // 由于本地测试环境，直接使用DirectLine密钥
+        // 这在生产环境中不推荐，应该使用后端生成的token
+        const directLineSecret = '84ByzFvknPLPCV6xXAEitBoF3JHlUt39odqnA6EMqcmtm64IqTlvJQQJ99BDACqBBLyAArohAAABAZBS3G8q.D9VfWmhc0jAJdZTmkdwlPuCnk161izVxmcNFffuz0ZJ8ms2vo5MyJQQJ99BDACqBBLyAArohAAABAZBS3nYp';
+        
+        // 创建直接连接实例
+        const directLine = window.WebChat.createDirectLine({
+            secret: directLineSecret,
+            webSocket: true  // 尝试使用WebSocket连接
+        });
+
+        // 连接事件监听
+        directLine.connectionStatus$.subscribe(
+            status => {
+                console.log(`连接状态: ${status}`);
+                if (status === 2) { // 连接成功
+                    updateStatus('已连接到NomadNavigator AI，可以开始聊天了!');
+                } else if (status === 1) { // 连接中
+                    updateStatus('正在连接到NomadNavigator AI...');
+                } else if (status === 0) { // 未连接
+                    updateStatus('未连接到NomadNavigator AI', true);
+                } else if (status === 3) { // 断开连接中
+                    updateStatus('正在断开连接...', true);
+                } else if (status === 4) { // 已断开连接
+                    updateStatus('与NomadNavigator AI的连接已断开', true);
+                }
+            },
+            error => {
+                console.error('连接错误:', error);
+                updateStatus(`连接出错: ${error.message}`, true);
+            }
+        );
+
+        // 监听活动
+        directLine.activity$.subscribe(
+            activity => {
+                console.log('收到活动:', activity);
+                if (activity.type === 'message' && activity.from.id !== 'user') {
+                    console.log('收到机器人消息:', activity.text);
+                }
+            },
+            error => {
+                console.error('活动订阅错误:', error);
+            }
+        );
+
+        // 渲染聊天界面
+        window.WebChat.renderWebChat({
+            directLine: directLine,
+            userID: 'user-' + Date.now(),
+            username: '游客',
+            locale: 'zh-CN',
+            botAvatarInitials: 'NA',
+            userAvatarInitials: '游',
+            styleOptions: {
+                bubbleBackground: '#F2F2F2',
+                bubbleFromUserBackground: '#0078D4',
+                bubbleFromUserTextColor: 'white',
+                rootHeight: '100%',
+                rootWidth: '100%',
+            }
+        }, document.getElementById('webchat'));
+        
+        // 发送欢迎事件
+        setTimeout(() => {
+            directLine.postActivity({
+                type: 'event',
+                name: 'webchat/join',
+                value: { language: 'zh-CN' },
+                from: { id: 'user-' + Date.now() }
+            }).subscribe(
+                id => console.log('欢迎事件已发送, ID:', id),
+                error => console.error('发送欢迎事件失败:', error)
+            );
+        }, 1000);
+    </script>
+</body>
+</html> 
