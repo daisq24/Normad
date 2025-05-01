@@ -7,6 +7,7 @@ NomadNavigator AI - 主应用入口
 import os
 import logging
 import asyncio
+import time
 from flask import Flask, request, jsonify, send_from_directory, redirect, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -41,6 +42,7 @@ CORS(app, resources={
 from app.bot.bot_app import create_adapter, BOT_APP
 from app.utils.config import SETTINGS
 from app.api.direct_line_proxy import direct_line_proxy_bp
+from app.utils.bot_helper import ensure_valid_activity, get_simple_activity
 
 # 注册DirectLine代理Blueprint
 app.register_blueprint(direct_line_proxy_bp, url_prefix='/api/directline')
@@ -69,6 +71,14 @@ def messages():
     try:
         auth_header = request.headers.get("Authorization", "")
         logger.info(f"收到消息: {body}")
+        
+        # 使用辅助函数确保活动格式正确
+        try:
+            body = ensure_valid_activity(body)
+            logger.info(f"标准化后的活动: {body}")
+        except (TypeError, ValueError) as e:
+            logger.error(f"活动验证失败: {e}")
+            return jsonify({"error": str(e)}), 400
         
         # 运行异步处理
         response = run_async(ADAPTER.process_activity(body, auth_header, BOT_APP.on_turn))
@@ -148,6 +158,40 @@ def diagnostic():
     except Exception as e:
         logger.exception("诊断端点错误")
         return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/test-bot", methods=["POST"])
+def test_bot():
+    """测试Bot功能的简化端点"""
+    try:
+        # 获取请求数据
+        if not request.json or "text" not in request.json:
+            return jsonify({"error": "请求必须包含text字段"}), 400
+            
+        # 从请求中提取文本
+        text = request.json.get("text")
+        user_id = request.json.get("user_id", f"dl_{int(time.time())}")
+        
+        # 创建简单的活动对象
+        activity = get_simple_activity(text, user_id)
+        logger.info(f"测试Bot端点创建的活动: {activity}")
+        
+        # 处理活动
+        response = run_async(ADAPTER.process_activity(activity, "", BOT_APP.on_turn))
+        
+        # 返回结果
+        if response:
+            result = {
+                "success": True,
+                "response": response.body
+            }
+            logger.info(f"测试Bot响应: {result}")
+            return jsonify(result), 200
+        else:
+            return jsonify({"success": True, "response": None}), 200
+            
+    except Exception as e:
+        logger.exception(f"测试Bot端点出错: {e}")
+        return jsonify({"error": str(e)}), 500
 
 # 添加跨域预检请求支持
 @app.after_request
