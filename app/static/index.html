@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data:;">
     <title>NomadNavigator AI - 数字游民的智能旅行伙伴</title>
     <style>
         body {
@@ -152,7 +152,7 @@
 
         // 先从后端获取token而不是直接使用secret
         const directLineSecret = '84ByzFvknPLPCV6xXAEitBoF3JHlUt39odqnA6EMqcmtm64IqTlvJQQJ99BDACqBBLyAArohAAABAZBS3G8q.EnTsnCC98Yg4TALcF9zvtXBjwXQRG5iYKghyVxPzkwhjIl9G0DsaJQQJ99BEAC3pKaRAArohAAABAZBS44XQ';
-        const userId = 'dl-user-' + Date.now().toString();
+        const userId = 'dl_' + Date.now().toString();
         
         // 添加调试信息
         console.log('准备获取DirectLine令牌...');

@@ -30,7 +30,7 @@ def generate_token():
             return jsonify({'error': 'Secret is required'}), 400
         
         # 添加用户ID参数，如果请求中没有，则生成一个
-        user_id = request.json.get('user_id', f'dl-user-{int(time.time())}')
+        user_id = request.json.get('user_id', f'dl_{int(time.time())}')
         
         headers = {
             'Authorization': f'Bearer {secret}'
