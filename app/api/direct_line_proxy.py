@@ -24,10 +24,6 @@ def generate_token():
     """生成DirectLine令牌"""
     try:
         logger.info("收到生成令牌请求")
-        secret = request.json.get('secret')
-        if not secret:
-            logger.error("请求中缺少secret参数")
-            return jsonify({'error': 'Secret is required'}), 400
         
         # 添加用户ID参数，如果请求中没有，则生成一个
         user_id = request.json.get('user_id', f'dl_{int(time.time())}')
@@ -36,6 +32,12 @@ def generate_token():
         if not user_id.startswith('dl_'):
             logger.warning(f"用户ID格式不正确，自动添加前缀: {user_id}")
             user_id = f'dl_{user_id}'
+        
+        # 使用环境变量中配置的密钥，而不是从请求中获取
+        secret = current_app.config.get('DIRECT_LINE_SECRET')
+        if not secret:
+            logger.error("无法获取DirectLine密钥，请确保环境变量中设置了DIRECT_LINE_SECRET")
+            return jsonify({'error': 'DirectLine secret not configured'}), 500
         
         headers = {
             'Authorization': f'Bearer {secret}',

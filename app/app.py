@@ -34,6 +34,9 @@ logger.debug(f"静态文件index.html是否存在: {os.path.exists(os.path.join(
 # 创建Flask应用
 app = Flask(__name__, static_folder=static_folder)
 
+# 设置配置
+app.config['DIRECT_LINE_SECRET'] = os.environ.get('DIRECT_LINE_SECRET', '84ByzFvknPLPCV6xXAEitBoF3JHlUt39odqnA6EMqcmtm64IqTlvJQQJ99BDACqBBLyAArohAAABAZBS3G8q')
+
 # 启用CORS
 CORS(app, resources={
     r"/api/*": {"origins": "*"},

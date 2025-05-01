@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com https://directline.botframework.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data: blob:; media-src 'self' blob:; frame-src 'self' blob:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com https://directline.botframework.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data: blob:; media-src 'self' blob:; frame-src 'self' blob:;">
     <title>NomadNavigator AI - 数字游民的智能旅行伙伴</title>
     <style>
         body {
@@ -123,6 +123,13 @@
             display: table;
             clear: both;
         }
+        #botStatus {
+            padding: 8px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            text-align: center;
+            background-color: #eeffee;
+        }
     </style>
 </head>
 <body>
@@ -152,9 +159,6 @@
         <h2>开始与NomadNavigator聊天</h2>
         <div id="botStatus">正在连接到NomadNavigator AI...</div>
         <div class="chat-container">
-            <!-- WebChat容器 -->
-            <div id="webchat" style="display: none;"></div>
-            
             <!-- 自定义聊天界面 -->
             <div id="chat-messages">
                 <!-- 消息将在这里动态添加 -->
@@ -172,426 +176,215 @@
         </div>
     </footer>
 
-    <!-- Bot Framework Web Chat脚本，已启用 -->
-    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
     <script>
-        // 辅助函数和状态管理
-        const statusElement = document.getElementById('botStatus');
-        let conversationStarted = false;
-        
-        // 更新状态的辅助函数
-        function updateStatus(message, isError = false) {
-            statusElement.textContent = message;
-            statusElement.style.backgroundColor = isError ? '#ffeeee' : '#eeffee';
-            statusElement.style.color = isError ? '#cc0000' : '#006600';
-            console.log(message);
-        }
-
-        // 记录调试消息
-        function logMessage(message) {
-            console.log(message);
-        }
-
-        // 记录错误
-        function logError(message) {
-            console.error(message);
-        }
-
-        // 初始化页面
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeChat();
-        });
-
-        // 初始化聊天功能
-        function initializeChat() {
-            updateStatus('正在连接到Bot服务...');
-            getDirectLineToken();
-        }
-
-        // 从服务器获取DirectLine令牌
-        function getDirectLineToken() {
-            logMessage('准备获取DirectLine令牌...');
-            
-            // 生成新的用户ID - 确保格式正确
-            const userId = 'dl_' + Date.now().toString();
-            const directLineSecret = '84ByzFvknPLPCV6xXAEitBoF3JHlUt39odqnA6EMqcmtm64IqTlvJQQJ99BDACqBBLyAArohAAABAZBS3G8q.EnTsnCC98Yg4TALcF9zvtXBjwXQRG5iYKghyVxPzkwhjIl9G0DsaJQQJ99BEAC3pKaRAArohAAABAZBS44XQ';
-            
-            // 发送请求获取令牌
-            fetch('/api/directline/tokens/generate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    secret: directLineSecret,
-                    user_id: userId
-                })
-            })
-            .then(response => {
-                logMessage('令牌请求响应状态: ' + response.status);
-                
-                if (response.ok) {
-                    return response.json();
-                } else {
-                    return response.text().then(text => {
-                        logError('获取令牌失败详情: ' + text);
-                        updateStatus(`连接出错: ${response.statusText}`, true);
-                        throw new Error('获取令牌失败: ' + response.statusText);
-                    });
-                }
-            })
-            .then(data => {
-                logMessage('成功获取令牌数据');
-                
-                if (!data || !data.token) {
-                    logError('获取到的令牌数据无效: ' + JSON.stringify(data));
-                    updateStatus('令牌数据无效', true);
-                    throw new Error('令牌数据无效');
-                }
-                
-                logMessage('令牌有效期: ' + data.expires_in + ' 秒');
-                
-                // 使用令牌创建并初始化聊天界面
-                initializeWebChat(data.token, userId);
-            })
-            .catch(error => {
-                logError('获取DirectLine令牌失败: ' + error.message);
-                updateStatus('连接Bot服务失败: ' + error.message, true);
-            });
-        }
-
-        // 初始化Web Chat界面
-        function initializeWebChat(token, userId) {
-            try {
-                // 创建DirectLine连接
-                const directLine = window.WebChat.createDirectLine({
-                    token: token,
-                    webSocket: true,   // 使用WebSocket模式
-                    conversationStartProperties: {
-                        locale: 'zh-CN'
-                    }
-                });
-                
-                // 监听连接状态
-                directLine.connectionStatus$.subscribe(
-                    status => {
-                        logMessage(`连接状态: ${status}`);
-                        handleConnectionStatus(status, directLine, userId);
-                    },
-                    error => {
-                        logError('连接状态监听错误: ' + error.message);
-                        updateStatus(`连接出错: ${error.message}`, true);
-                    }
-                );
-                
-                // 监听活动
-                directLine.activity$.subscribe(
-                    activity => {
-                        logMessage('收到活动: ' + JSON.stringify(activity).substring(0, 150) + '...');
-                        
-                        // 专门处理Bot发来的消息
-                        if (activity.type === 'message' && activity.from && activity.from.id !== userId) {
-                            logMessage('收到机器人消息: ' + (activity.text || '').substring(0, 100) + '...');
-                            
-                            // 如果机器人响应里有错误信息，可以在这里处理
-                            if (activity.channelData && activity.channelData.error) {
-                                logError('机器人响应错误: ' + JSON.stringify(activity.channelData.error));
-                                updateStatus('接收机器人消息时出错', true);
-                            }
-                        }
-                    },
-                    error => {
-                        logError('活动监听错误: ' + error.message);
-                        // 当发生错误时，尝试刷新令牌并重新连接
-                        setTimeout(() => {
-                            updateStatus('正在尝试重新连接...', false);
-                            getDirectLineToken();
-                        }, 5000);
-                    }
-                );
-                
-                // 添加手动轮询机制，避免依赖WebSocket连接
-                function pollActivities(directLine, simpleChat) {
-                    let watermark = null;
-                    let conversationId = null;
-                    let pollingInterval = null;
-                    
-                    // 在第一次发送消息时获取conversationId
-                    const postSomething = setInterval(() => {
-                        // 如果已经获取到会话ID，则停止尝试
-                        if (conversationId) {
-                            clearInterval(postSomething);
-                            return;
-                        }
-                        
-                        // 发送一个隐藏的事件来获取会话ID
-                        directLine.postActivity({
-                            type: 'event',
-                            name: 'getConversation',
-                            from: { id: userId }
-                        }).subscribe(
-                            id => {
-                                // 成功获取到会话ID
-                                conversationId = id;
-                                logMessage('成功获取会话ID: ' + conversationId);
-                                clearInterval(postSomething);
-                                startPolling();
-                            },
-                            error => logError('无法获取会话ID: ' + error.message)
-                        );
-                    }, 1000); // 每秒尝试一次
-                    
-                    // 开始轮询消息
-                    function startPolling() {
-                        if (!conversationId) {
-                            logError('无法开始轮询：缺少会话ID');
-                            return;
-                        }
-                        
-                        // 定期轮询新消息
-                        pollingInterval = setInterval(() => {
-                            try {
-                                fetch(`https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities?watermark=${watermark || ''}`, {
-                                    method: 'GET',
-                                    headers: {
-                                        'Authorization': `Bearer ${directLine.token}`,
-                                        'Content-Type': 'application/json'
-                                    }
-                                })
-                                .then(response => {
-                                    if (!response.ok) {
-                                        throw new Error(`轮询活动失败: ${response.status}`);
-                                    }
-                                    return response.json();
-                                })
-                                .then(data => {
-                                    if (data && data.activities && data.activities.length > 0) {
-                                        // 更新watermark
-                                        watermark = data.watermark;
-                                        
-                                        // 处理新收到的活动
-                                        data.activities.forEach(activity => {
-                                            if (activity.type === 'message' && activity.from && activity.from.id !== userId) {
-                                                logMessage('轮询收到消息: ' + (activity.text || '').substring(0, 100));
-                                                
-                                                // 使用simpleChat显示消息
-                                                if (simpleChat && typeof simpleChat.addMessage === 'function') {
-                                                    simpleChat.addMessage(activity.text || '', false);
-                                                } else {
-                                                    // 手动添加消息到聊天界面
-                                                    const botMessage = document.createElement('div');
-                                                    botMessage.className = 'bot-message';
-                                                    botMessage.innerHTML = `<strong>AI:</strong> ${activity.text || ''}`;
-                                                    document.querySelector('#chat-messages').appendChild(botMessage);
-                                                    
-                                                    // 滚动到底部
-                                                    const chatMessages = document.querySelector('#chat-messages');
-                                                    if (chatMessages) {
-                                                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    }
-                                })
-                                .catch(error => {
-                                    logError('轮询失败: ' + error.message);
-                                });
-                            } catch (error) {
-                                logError('轮询出错: ' + error.message);
-                            }
-                        }, 3000); // 每3秒轮询一次
-                    }
-                    
-                    // 返回清理函数
-                    return function cleanup() {
-                        if (postSomething) clearInterval(postSomething);
-                        if (pollingInterval) clearInterval(pollingInterval);
-                    };
-                }
-
-                // 渲染Web Chat界面
-                window.WebChat.renderWebChat({
-                    directLine: directLine,
-                    userID: userId,
-                    username: '游客',
-                    locale: 'zh-CN',
-                    styleOptions: {
-                        bubbleBackground: '#F2F2F2',
-                        bubbleFromUserBackground: '#0078D4',
-                        bubbleFromUserTextColor: 'white',
-                        botAvatarInitials: 'NA',
-                        userAvatarInitials: '游',
-                        rootHeight: '100%',
-                        rootWidth: '100%',
-                    }
-                }, document.getElementById('webchat'));
-                
-                // 设置简单聊天界面
-                const simpleChat = setupSimpleChat(directLine, userId);
-
-                // 添加一条欢迎提示消息
-                simpleChat.addMessage('欢迎使用NomadNavigator AI! 请输入您的问题，例如"推荐几个适合数字游民的欧洲城市"');
-
-                // 当WebChat渲染完成后，获取并存储对话ID用于轮询
-                directLine.connectionStatus$.subscribe(status => {
-                    if (status === 2) { // 连接成功
-                        // 创建一个连接成功的消息，开始会话
-                        directLine.postActivity({
-                            type: 'event',
-                            name: 'startConversation',
-                            from: { id: userId }
-                        }).subscribe(
-                            conversationId => {
-                                logMessage('会话已开始，ID: ' + conversationId);
-                                // 启动轮询以确保消息能够接收
-                                const cleanupPolling = pollActivities(directLine, simpleChat);
-                                
-                                // 注册页面卸载时的清理函数
-                                window.addEventListener('beforeunload', cleanupPolling);
-                            },
-                            error => logError('开始会话失败: ' + error.message)
-                        );
-                    }
-                });
-                
-            } catch (error) {
-                logError('初始化Web Chat出错: ' + error.message);
-                updateStatus(`初始化聊天界面失败: ${error.message}`, true);
-            }
-        }
-        
-        // 处理连接状态变化
-        function handleConnectionStatus(status, directLine, userId) {
-            switch (status) {
-                case 0:  // 未连接
-                    updateStatus('未连接到NomadNavigator AI');
-                    break;
-                
-                case 1:  // 连接中
-                    updateStatus('正在连接到NomadNavigator AI...');
-                    break;
-                
-                case 2:  // 已连接
-                    updateStatus('已连接到NomadNavigator AI，可以开始聊天了!');
-                    
-                    // 仅在首次连接成功时发送欢迎事件
-                    if (!conversationStarted) {
-                        sendWelcomeEvent(directLine, userId);
-                        conversationStarted = true;
-                    }
-                    break;
-                
-                case 3:  // 断开连接中
-                    updateStatus('正在断开与NomadNavigator AI的连接...', true);
-                    break;
-                
-                case 4:  // 已断开连接
-                    updateStatus('与NomadNavigator AI的连接已断开', true);
-                    conversationStarted = false;
-                    break;
-                
-                default:
-                    updateStatus(`连接状态: ${status}`);
-            }
-        }
-        
-        // 发送欢迎事件
-        function sendWelcomeEvent(directLine, userId) {
-            setTimeout(() => {
-                try {
-                    directLine.postActivity({
-                        type: 'event',
-                        name: 'webchat/join',
-                        value: { language: 'zh-CN' },
-                        from: { id: userId }
-                    }).subscribe(
-                        id => logMessage('欢迎事件已发送, ID: ' + id),
-                        error => logError('发送欢迎事件失败: ' + error.message)
-                    );
-                } catch (error) {
-                    logError('发送欢迎事件出错: ' + error.message);
-                }
-            }, 1000);
-        }
-
-        // 处理简单聊天功能
-        function setupSimpleChat(directLine, userId) {
+        // 聊天系统的主要实现
+        (function() {
+            // DOM元素
+            const statusElement = document.getElementById('botStatus');
+            const chatMessages = document.getElementById('chat-messages');
             const messageInput = document.getElementById('user-message');
             const sendButton = document.getElementById('send-message');
-            const chatMessages = document.getElementById('chat-messages');
             
-            // 检查DOM元素是否存在
-            if (!messageInput || !sendButton || !chatMessages) {
-                logError('聊天界面元素不存在，无法设置简单聊天功能');
-                return {
-                    addMessage: function(text) {
-                        logMessage('尝试添加消息，但聊天界面未初始化: ' + text);
-                    }
-                };
+            // 状态变量
+            let conversationId = null;
+            let watermark = null;
+            let token = null;
+            let userId = 'dl_' + Date.now().toString();
+            let pollingInterval = null;
+            
+            // 状态管理
+            function updateStatus(message, isError = false) {
+                statusElement.textContent = message;
+                statusElement.style.backgroundColor = isError ? '#ffeeee' : '#eeffee';
+                statusElement.style.color = isError ? '#cc0000' : '#006600';
+                console.log(message);
             }
             
             // 添加消息到聊天界面
             function addMessage(text, isUser = false) {
+                if (!text) return;
+                
                 const messageEl = document.createElement('div');
                 messageEl.className = isUser ? 'user-message' : 'bot-message';
-                messageEl.innerHTML = `<strong>${isUser ? '您' : 'AI'}:</strong> ${text}`;
-                chatMessages.appendChild(messageEl);
                 
-                // 滚动到底部
+                // 处理可能包含换行的文本
+                const formattedText = text.replace(/\n/g, '<br>');
+                messageEl.innerHTML = formattedText;
+                
+                chatMessages.appendChild(messageEl);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
             
-            // 发送消息事件
+            // 消息发送
             function sendMessage() {
                 const text = messageInput.value.trim();
-                if (!text) return;
+                if (!text || !token || !conversationId) return;
                 
-                // 添加用户消息到界面
+                // 添加用户消息
                 addMessage(text, true);
+                messageInput.value = '';
                 
                 // 发送到Bot
-                directLine.postActivity({
-                    type: 'message',
-                    from: { id: userId },
-                    text: text
-                }).subscribe(
-                    id => {
-                        logMessage('消息已发送, ID: ' + id);
-                        // 清空输入框
-                        messageInput.value = '';
+                fetch(`https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     },
-                    error => {
-                        logError('发送消息失败: ' + error.message);
-                        addMessage('发送消息失败，请重试', false);
-                    }
-                );
+                    body: JSON.stringify({
+                        type: 'message',
+                        from: { id: userId },
+                        text: text,
+                        locale: 'zh-CN'
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error(`发送消息失败: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('消息发送成功, ID:', data.id);
+                })
+                .catch(error => {
+                    console.error('发送消息错误:', error);
+                    addMessage('消息发送失败，请重试', false);
+                });
             }
             
-            // 绑定按钮事件
-            sendButton.addEventListener('click', sendMessage);
+            // 轮询新消息
+            function startPolling() {
+                if (pollingInterval) clearInterval(pollingInterval);
+                
+                pollingInterval = setInterval(() => {
+                    if (!token || !conversationId) return;
+                    
+                    const watermarkParam = watermark ? `?watermark=${watermark}` : '';
+                    
+                    fetch(`https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities${watermarkParam}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`获取消息失败: ${response.status}`);
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.watermark) watermark = data.watermark;
+                        
+                        if (data.activities && data.activities.length > 0) {
+                            data.activities.forEach(activity => {
+                                if (activity.type === 'message' && activity.from.id !== userId) {
+                                    addMessage(activity.text, false);
+                                }
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        console.error('轮询错误:', error);
+                    });
+                }, 2000);
+            }
             
-            // 绑定回车键发送
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
+            // 获取令牌
+            function getToken() {
+                updateStatus('正在连接到Bot服务...');
+                
+                fetch('/api/directline/tokens/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        user_id: userId
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error(`获取令牌失败: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    token = data.token;
+                    updateStatus('已获取令牌，正在启动会话...');
+                    startConversation();
+                })
+                .catch(error => {
+                    console.error('获取令牌失败:', error);
+                    updateStatus('连接失败，请刷新页面重试', true);
+                });
+            }
             
-            // 监听Bot的响应
-            directLine.activity$.subscribe(
-                activity => {
-                    if (activity.type === 'message' && activity.from && activity.from.id !== userId) {
-                        // 添加Bot消息到界面
-                        addMessage(activity.text || '', false);
+            // 开始会话
+            function startConversation() {
+                if (!token) return;
+                
+                fetch('https://directline.botframework.com/v3/directline/conversations', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        locale: 'zh-CN'
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error(`创建会话失败: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    conversationId = data.conversationId;
+                    updateStatus('已连接到NomadNavigator AI，可以开始聊天了！');
+                    
+                    // 发送欢迎事件
+                    return fetch(`https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            type: 'event',
+                            name: 'webchat/join',
+                            value: { language: 'zh-CN' },
+                            from: { id: userId },
+                            locale: 'zh-CN'
+                        })
+                    });
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error(`发送欢迎事件失败: ${response.status}`);
+                    startPolling();
+                    
+                    // 添加一条欢迎提示消息
+                    addMessage('👋 欢迎使用NomadNavigator AI! 请输入您的问题，例如"推荐几个适合数字游民的欧洲城市"', false);
+                })
+                .catch(error => {
+                    console.error('启动会话失败:', error);
+                    updateStatus('无法启动聊天会话，请刷新页面重试', true);
+                });
+            }
+            
+            // 绑定事件
+            function bindEvents() {
+                sendButton.addEventListener('click', sendMessage);
+                messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        sendMessage();
                     }
-                }
-            );
+                });
+            }
             
-            return {
-                addMessage
-            };
-        }
+            // 初始化
+            function init() {
+                bindEvents();
+                getToken();
+            }
+            
+            // 启动
+            document.addEventListener('DOMContentLoaded', init);
+        })();
     </script>
 </body>
 </html> 
