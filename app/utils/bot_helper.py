@@ -141,4 +141,27 @@ def get_simple_activity(text: str, user_id: Optional[str] = None) -> Dict[str, A
         },
         "text": text,
         "locale": "zh-CN"
-    } 
+    }
+
+def create_adapter_request(activity: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    创建Bot Framework适配器可以解析的请求对象
+    
+    Args:
+        activity: 活动对象
+        
+    Returns:
+        Dict: 适配器请求对象
+    """
+    # 确保活动是有效的
+    activity = ensure_valid_activity(activity)
+    
+    # 创建请求对象，这是适配器parse_request期望的格式
+    adapter_request = {
+        "body": activity,
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    }
+    
+    return adapter_request 

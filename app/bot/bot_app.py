@@ -18,6 +18,7 @@ from botbuilder.schema import Activity, ActivityTypes
 
 from app.utils.config import SETTINGS
 from app.models.nomad_agent import NomadAgent
+from app.bot.bot_adapter import CustomBotAdapter
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -59,8 +60,8 @@ def create_adapter():
     if not SETTINGS.MICROSOFT_APP_ID or not SETTINGS.MICROSOFT_APP_PASSWORD:
         logger.warning("未设置App ID或密码，Bot将以非验证模式运行")
     
-    # 创建适配器
-    adapter = BotFrameworkAdapter(settings)
+    # 创建自定义适配器
+    adapter = CustomBotAdapter(settings)
     adapter.on_turn_error = on_error
     
     return adapter
