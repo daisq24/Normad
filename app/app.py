@@ -8,6 +8,8 @@ import os
 import logging
 import asyncio
 import time
+import json
+import traceback
 from flask import Flask, request, jsonify, send_from_directory, redirect, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -171,34 +173,53 @@ def test_bot():
         # 从请求中提取文本
         text = request.json.get("text")
         user_id = request.json.get("user_id", f"dl_{int(time.time())}")
+        channel_id = request.json.get("channel_id", "test")
+        
+        logger.info(f"测试Bot端点收到请求: text='{text}', user_id='{user_id}', channel_id='{channel_id}'")
+        
+        # 记录系统状态
+        logger.info(f"Bot配置: AppId={SETTINGS.MICROSOFT_APP_ID != ''}, AppPassword={SETTINGS.MICROSOFT_APP_PASSWORD != ''}")
+        logger.info(f"OpenAI就绪: {SETTINGS.AZURE_OPENAI_KEY != '' and SETTINGS.AZURE_OPENAI_ENDPOINT != ''}")
         
         # 创建简单的活动对象
         activity = get_simple_activity(text, user_id)
-        logger.info(f"测试Bot端点创建的活动: {activity}")
+        activity["channelId"] = channel_id
+        activity["serviceUrl"] = request.host_url
+        logger.info(f"测试Bot端点创建的活动: {json.dumps(activity, default=str)}")
         
         # 处理活动 - 直接传递活动对象
-        response = run_async(ADAPTER.process_activity(activity, "", BOT_APP.on_turn))
+        auth_header = request.headers.get("Authorization", "")
+        logger.info(f"使用授权头: {auth_header[:20] if auth_header else 'None'}")
+        
+        start_time = time.time()
+        response = run_async(ADAPTER.process_activity(activity, auth_header, BOT_APP.on_turn))
+        processing_time = time.time() - start_time
+        
+        logger.info(f"Bot处理活动耗时: {processing_time:.2f}秒")
         
         # 返回结果
         if response:
             result = {
                 "success": True,
-                "response": response.body
+                "response": response.body,
+                "processing_time": f"{processing_time:.2f}秒"
             }
-            logger.info(f"测试Bot响应: {result}")
+            logger.info(f"测试Bot响应: {json.dumps(result, default=str)}")
             return jsonify(result), 200
         else:
-            # 没有直接响应，查询最新一条消息
+            # 没有直接响应，可能是通过其他通道发送
+            logger.info("Bot没有返回直接响应，这是正常的，因为响应可能通过其他通道发送")
             return jsonify({
                 "success": True, 
                 "response": {
                     "text": "处理完成，但没有直接响应。这是正常的，因为响应可能通过DirectLine通道发送。"
-                }
+                },
+                "processing_time": f"{processing_time:.2f}秒"
             }), 200
             
     except Exception as e:
         logger.exception(f"测试Bot端点出错: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 # 添加跨域预检请求支持
 @app.after_request
