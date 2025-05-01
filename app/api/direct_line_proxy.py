@@ -36,17 +36,21 @@ def generate_token():
             'Authorization': f'Bearer {secret}'
         }
         
-        # 添加用户参数到请求
-        token_params = {
-            'User-Agent': 'NomadNavigator/1.0',
-            'user': user_id
+        # DirectLine API期望的正确格式
+        params = {
+            'User': {
+                'Id': user_id,
+                'Name': '游客'
+            }
         }
         
         logger.debug(f"向DirectLine API发送请求获取令牌，URL: {DIRECT_LINE_URL}/tokens/generate")
+        logger.debug(f"请求参数: {params}")
+        
         response = requests.post(
             f'{DIRECT_LINE_URL}/tokens/generate',
             headers=headers,
-            json=token_params
+            json=params
         )
         
         logger.debug(f"DirectLine API响应: {response.status_code}")
