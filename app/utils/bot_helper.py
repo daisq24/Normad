@@ -7,10 +7,20 @@ Bot Framework辅助函数
 import time
 import logging
 import uuid
+import datetime
 from typing import Dict, Any, Optional
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+def get_iso_timestamp() -> str:
+    """
+    获取标准ISO8601格式的时间戳
+    
+    Returns:
+        str: ISO8601格式的时间戳
+    """
+    return datetime.datetime.utcnow().isoformat() + "Z"
 
 def ensure_valid_activity(activity: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -39,7 +49,7 @@ def ensure_valid_activity(activity: Dict[str, Any]) -> Dict[str, Any]:
     
     # 确保有timestamp字段
     if "timestamp" not in activity:
-        activity["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime())
+        activity["timestamp"] = get_iso_timestamp()
     
     # 确保from字段正确
     if "from" not in activity:
@@ -98,7 +108,7 @@ def format_bot_response(text: str, conversation_id: Optional[str] = None) -> Dic
     return {
         "type": "message",
         "id": str(uuid.uuid4()),
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime()),
+        "timestamp": get_iso_timestamp(),
         "channelId": "directline",
         "from": {
             "id": "bot",
@@ -130,7 +140,7 @@ def get_simple_activity(text: str, user_id: Optional[str] = None) -> Dict[str, A
     return {
         "type": "message",
         "id": str(uuid.uuid4()),
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime()),
+        "timestamp": get_iso_timestamp(),
         "channelId": "directline",
         "from": {
             "id": user_id,

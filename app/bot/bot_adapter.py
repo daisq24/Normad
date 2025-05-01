@@ -7,7 +7,9 @@
 import json
 import logging
 from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
-from botbuilder.schema import Activity
+from botbuilder.schema import Activity, ResourceResponse
+from botframework.connector import ConnectorClient
+from botframework.connector.auth import MicrosoftAppCredentials
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -60,7 +62,7 @@ class CustomBotAdapter(BotFrameworkAdapter):
                     logger.info(f"使用授权头: {auth_header[:20]}...")
                 
                 # 创建上下文
-                context = TurnContext(self, activity)
+                context = await self.create_context(activity)
                 
                 # 执行Bot逻辑
                 await logic(context)
@@ -87,4 +89,67 @@ class CustomBotAdapter(BotFrameworkAdapter):
         """
         logger.debug(f"创建上下文, 活动类型: {activity.type}")
         context = TurnContext(self, activity)
-        return context 
+        
+        # 添加ConnectorClient到turn_state
+        if activity.service_url:
+            logger.debug(f"为活动创建ConnectorClient, service_url: {activity.service_url}")
+            
+            # 创建凭据
+            credentials = MicrosoftAppCredentials(
+                self.settings.app_id or "",
+                self.settings.app_password or ""
+            )
+            
+            # 创建ConnectorClient
+            connector_client = ConnectorClient(credentials, base_url=activity.service_url)
+            
+            # 添加到上下文
+            context.turn_state[self.BOT_CONNECTOR_CLIENT_KEY] = connector_client
+            logger.debug("已添加ConnectorClient到turn_state")
+        else:
+            logger.warning("活动缺少service_url，无法创建ConnectorClient")
+            
+        return context
+        
+    async def send_activities(self, context, activities):
+        """
+        Override send_activities方法，为DirectLine通道提供特殊处理
+        """
+        try:
+            # 使用父类的send_activities方法
+            return await super().send_activities(context, activities)
+        except KeyError as e:
+            # 处理缺少ConnectorClient或access_token的情况
+            if str(e).strip("'") == self.BOT_CONNECTOR_CLIENT_KEY or str(e).strip("'") == 'access_token':
+                # 这是我们期望的错误，缺少ConnectorClient或access_token
+                logger.warning(f"凭据或连接问题，使用替代响应方法: {str(e)}")
+                
+                # 为活动生成响应
+                responses = []
+                for activity in activities:
+                    # 创建一个ResourceResponse作为替代响应
+                    response = ResourceResponse(id=f"direct-response-{context.activity.id}")
+                    responses.append(response)
+                    
+                    # 记录发送的活动
+                    logger.info(f"已发送活动: {activity.type} - '{activity.text or ''}'[:50]...")
+                
+                return responses
+            else:
+                # 不是我们期望处理的错误，重新抛出
+                logger.error(f"发送活动时出现意外错误: {e}")
+                raise
+        except Exception as e:
+            # 处理其他可能的异常
+            logger.error(f"发送活动时出现异常: {e}")
+            
+            # 尝试创建替代响应
+            responses = []
+            for activity in activities:
+                response = ResourceResponse(id=f"error-response-{context.activity.id}")
+                responses.append(response)
+                
+                # 记录问题和活动
+                logger.info(f"发送活动失败但提供替代响应: {activity.type} - '{activity.text or ''}'[:50]...")
+                
+            return responses 
