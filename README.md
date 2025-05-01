@@ -111,6 +111,38 @@ pip install colorama
 python deploy_test.py --url https://your-app-name.azurewebsites.net
 ```
 
-## 许可
+## 常见问题排查
 
-MIT License 
+### DirectLine连接问题（403错误）
+
+如果遇到"Failed to load resource: the server responded with a status of 403"错误，检查：
+
+1. **CORS配置**：确保已在Bot Service的DirectLine通道中添加了你的应用URL作为允许的来源
+2. **密钥有效性**：验证DirectLine密钥是否有效，可能需要生成新密钥
+3. **身份验证流程**：使用`/api/directline/tokens/generate`端点获取临时token，而不是直接使用secret
+
+### 内容安全策略(CSP)错误
+
+如果看到"Content Security Policy blocks the use of 'eval'"错误：
+
+1. 确保index.html中包含适当的CSP meta标签
+2. 检查CSP策略是否允许所需的源（botframework.com域）
+
+### 用户ID不匹配问题
+
+如果遇到"Activity.from.id does not match with user id"警告：
+
+1. 确保前端代码中使用一致的用户ID
+2. 在所有活动中使用相同的用户ID
+
+### 消息未传递到Bot
+
+如果你可以发送消息但没有收到回复：
+
+1. 检查应用日志，查看是否有Bot Service的错误
+2. 验证`/api/messages`端点是否正确配置
+3. 检查Bot框架适配器配置（App ID和Password）
+
+## 许可证
+
+此项目遵循MIT许可证。详见LICENSE文件。 
