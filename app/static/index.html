@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data:;">
     <title>NomadNavigator AI - 数字游民的智能旅行伙伴</title>
     <style>
         body {
@@ -146,83 +147,129 @@
             console.log(message);
         }
 
-        // 使用直接连接而不是通过Secret获取Token
+        // 使用两步token流程而不是直接使用secret
         updateStatus('正在连接到Bot服务...');
 
-        // 由于本地测试环境，直接使用DirectLine密钥
-        // 这在生产环境中不推荐，应该使用后端生成的token
-        const directLineSecret = '84ByzFvknPLPCV6xXAEitBoF3JHlUt39odqnA6EMqcmtm64IqTlvJQQJ99BDACqBBLyAArohAAABAZBS3G8q.D9VfWmhc0jAJdZTmkdwlPuCnk161izVxmcNFffuz0ZJ8ms2vo5MyJQQJ99BDACqBBLyAArohAAABAZBS3nYp';
+        // 先从后端获取token而不是直接使用secret
+        const directLineSecret = '84ByzFvknPLPCV6xXAEitBoF3JHlUt39odqnA6EMqcmtm64IqTlvJQQJ99BDACqBBLyAArohAAABAZBS3G8q.EnTsnCC98Yg4TALcF9zvtXBjwXQRG5iYKghyVxPzkwhjIl9G0DsaJQQJ99BEAC3pKaRAArohAAABAZBS44XQ';
+        const userId = 'dl-user-' + Date.now().toString();
         
-        // 创建直接连接实例
-        const directLine = window.WebChat.createDirectLine({
-            secret: directLineSecret,
-            webSocket: true  // 尝试使用WebSocket连接
+        // 添加调试信息
+        console.log('准备获取DirectLine令牌...');
+
+        // 修复请求错误处理
+        fetch('/api/directline/tokens/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ secret: directLineSecret })
+        })
+        .then(response => {
+            console.log('令牌请求响应状态:', response.status);
+            if (response.ok) {
+                return response.json();
+            } else {
+                response.text().then(text => {
+                    console.error('获取令牌失败详情:', text);
+                    updateStatus(`连接出错: ${response.statusText} - ${text.substring(0, 100)}`, true);
+                });
+                throw new Error('获取令牌失败: ' + response.statusText);
+            }
+        })
+        .then(data => {
+            console.log('成功获取令牌数据');
+            if (!data || !data.token) {
+                console.error('获取到的令牌数据无效:', data);
+                updateStatus('令牌数据无效', true);
+                throw new Error('令牌数据无效');
+            }
+            
+            // 使用token创建DirectLine连接
+            const token = data.token;
+            console.log('令牌有效期:', data.expires_in, '秒');
+            
+            // 创建直接连接实例并添加错误处理
+            try {
+                const directLine = window.WebChat.createDirectLine({
+                    token: token,
+                    webSocket: true,  // 尝试使用WebSocket连接
+                    domain: 'https://directline.botframework.com/v3/directline'
+                });
+
+                // 连接事件监听
+                directLine.connectionStatus$.subscribe(
+                    status => {
+                        console.log(`连接状态: ${status}`);
+                        if (status === 2) { // 连接成功
+                            updateStatus('已连接到NomadNavigator AI，可以开始聊天了!');
+                        } else if (status === 1) { // 连接中
+                            updateStatus('正在连接到NomadNavigator AI...');
+                        } else if (status === 0) { // 未连接
+                            updateStatus('未连接到NomadNavigator AI', true);
+                        } else if (status === 3) { // 断开连接中
+                            updateStatus('正在断开连接...', true);
+                        } else if (status === 4) { // 已断开连接
+                            updateStatus('与NomadNavigator AI的连接已断开', true);
+                        }
+                    },
+                    error => {
+                        console.error('连接错误:', error);
+                        updateStatus(`连接出错: ${error.message}`, true);
+                    }
+                );
+
+                // 监听活动
+                directLine.activity$.subscribe(
+                    activity => {
+                        console.log('收到活动:', activity);
+                        if (activity.type === 'message' && activity.from.id !== userId) {
+                            console.log('收到机器人消息:', activity.text);
+                        }
+                    },
+                    error => {
+                        console.error('活动订阅错误:', error);
+                    }
+                );
+
+                // 渲染聊天界面
+                window.WebChat.renderWebChat({
+                    directLine: directLine,
+                    userID: userId,
+                    username: '游客',
+                    locale: 'zh-CN',
+                    botAvatarInitials: 'NA',
+                    userAvatarInitials: '游',
+                    styleOptions: {
+                        bubbleBackground: '#F2F2F2',
+                        bubbleFromUserBackground: '#0078D4',
+                        bubbleFromUserTextColor: 'white',
+                        rootHeight: '100%',
+                        rootWidth: '100%',
+                    }
+                }, document.getElementById('webchat'));
+                
+                // 发送欢迎事件
+                setTimeout(() => {
+                    directLine.postActivity({
+                        type: 'event',
+                        name: 'webchat/join',
+                        value: { language: 'zh-CN' },
+                        from: { id: userId }
+                    }).subscribe(
+                        id => console.log('欢迎事件已发送, ID:', id),
+                        error => console.error('发送欢迎事件失败:', error)
+                    );
+                }, 1000);
+            } catch (error) {
+                console.error('创建DirectLine连接时出错:', error);
+                updateStatus(`创建DirectLine连接时出错: ${error.message}`, true);
+            }
+        })
+        .catch(error => {
+            console.error('获取DirectLine令牌失败:', error);
+            updateStatus('连接Bot服务失败: ' + error.message, true);
         });
-
-        // 连接事件监听
-        directLine.connectionStatus$.subscribe(
-            status => {
-                console.log(`连接状态: ${status}`);
-                if (status === 2) { // 连接成功
-                    updateStatus('已连接到NomadNavigator AI，可以开始聊天了!');
-                } else if (status === 1) { // 连接中
-                    updateStatus('正在连接到NomadNavigator AI...');
-                } else if (status === 0) { // 未连接
-                    updateStatus('未连接到NomadNavigator AI', true);
-                } else if (status === 3) { // 断开连接中
-                    updateStatus('正在断开连接...', true);
-                } else if (status === 4) { // 已断开连接
-                    updateStatus('与NomadNavigator AI的连接已断开', true);
-                }
-            },
-            error => {
-                console.error('连接错误:', error);
-                updateStatus(`连接出错: ${error.message}`, true);
-            }
-        );
-
-        // 监听活动
-        directLine.activity$.subscribe(
-            activity => {
-                console.log('收到活动:', activity);
-                if (activity.type === 'message' && activity.from.id !== 'user') {
-                    console.log('收到机器人消息:', activity.text);
-                }
-            },
-            error => {
-                console.error('活动订阅错误:', error);
-            }
-        );
-
-        // 渲染聊天界面
-        window.WebChat.renderWebChat({
-            directLine: directLine,
-            userID: 'user-' + Date.now(),
-            username: '游客',
-            locale: 'zh-CN',
-            botAvatarInitials: 'NA',
-            userAvatarInitials: '游',
-            styleOptions: {
-                bubbleBackground: '#F2F2F2',
-                bubbleFromUserBackground: '#0078D4',
-                bubbleFromUserTextColor: 'white',
-                rootHeight: '100%',
-                rootWidth: '100%',
-            }
-        }, document.getElementById('webchat'));
-        
-        // 发送欢迎事件
-        setTimeout(() => {
-            directLine.postActivity({
-                type: 'event',
-                name: 'webchat/join',
-                value: { language: 'zh-CN' },
-                from: { id: 'user-' + Date.now() }
-            }).subscribe(
-                id => console.log('欢迎事件已发送, ID:', id),
-                error => console.error('发送欢迎事件失败:', error)
-            );
-        }, 1000);
     </script>
 </body>
 </html> 

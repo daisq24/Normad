@@ -25,8 +25,24 @@ class CosmosDBService:
             
             if not connection_string:
                 # 构建连接字符串（如果没有提供完整的连接字符串）
-                connection_string = f"mongodb://{SETTINGS.AZURE_COSMOS_ACCOUNT}:{SETTINGS.AZURE_COSMOS_KEY}@{SETTINGS.AZURE_COSMOS_ACCOUNT}.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retrywrites=false&maxIdleTimeMS=120000&appName=@{SETTINGS.AZURE_COSMOS_ACCOUNT}@"
+                connection_string = f"mongodb://{SETTINGS.AZURE_COSMOS_ACCOUNT}:{SETTINGS.AZURE_COSMOS_KEY}@{SETTINGS.AZURE_COSMOS_ACCOUNT}.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retrywrites=false&maxIdleTimeMS=120000&appName={SETTINGS.AZURE_COSMOS_ACCOUNT}"
+            else:
+                # 修正连接字符串中的appName格式问题
+                connection_string = connection_string.replace("appName=@nomadnavigator-mongo@", "appName=nomadnavigator-mongo")
+                
+                # 移除可能的重复部分
+                if connection_string.count("mongodb://") > 1:
+                    connection_string = connection_string[:connection_string.find("mongodb://", 1)]
+                
+                # 确保retrywrites=false参数存在
+                if "retrywrites=false" not in connection_string.lower():
+                    if "?" in connection_string:
+                        connection_string += "&retrywrites=false"
+                    else:
+                        connection_string += "?retrywrites=false"
             
+            logger.debug(f"使用连接字符串: {connection_string[:60]}...{connection_string[-30:]}")
+                
             # 创建客户端
             self.client = pymongo.MongoClient(connection_string)
             
@@ -79,7 +95,7 @@ class CosmosDBService:
             else:
                 # 用户不存在，创建新用户配置
                 new_profile = {
-                    "user_id": user_id,
+                    "user_id": user_id,  # 分片键
                     "type": "profile",
                     "created_at": datetime.utcnow().isoformat(),
                     "updated_at": datetime.utcnow().isoformat(),
@@ -127,7 +143,7 @@ class CosmosDBService:
                     # 增加偏好权重或添加新偏好
                     current_prefs[pref] = current_prefs.get(pref, 0) + 1
             
-            # 更新操作
+            # 确保查询中包含分片键
             self.user_collection.update_one(
                 {"user_id": user_id, "type": "profile"},
                 {
@@ -163,6 +179,10 @@ class CosmosDBService:
             interaction["type"] = "interaction"
             interaction["created_at"] = datetime.utcnow().isoformat()
             
+            # 确保包含分片键
+            if "user_id" not in interaction and "userId" in interaction:
+                interaction["user_id"] = interaction["userId"]
+                
             # 保存到历史集合
             self.history_collection.insert_one(interaction)
             
@@ -212,7 +232,7 @@ class CosmosDBService:
             if getattr(self, 'mock_mode', False):
                 return []
             
-            # 查询历史交互并排序
+            # 查询历史交互并排序 - 确保包含分片键
             cursor = self.history_collection.find(
                 {"user_id": user_id}
             ).sort("created_at", pymongo.DESCENDING).limit(limit)

@@ -7,7 +7,7 @@ DirectLine代理 - 用于将消息从Web客户端转发到Bot服务
 import json
 import logging
 import requests
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -22,24 +22,39 @@ DIRECT_LINE_URL = "https://directline.botframework.com/v3/directline"
 def generate_token():
     """生成DirectLine令牌"""
     try:
+        logger.info("收到生成令牌请求")
         secret = request.json.get('secret')
         if not secret:
+            logger.error("请求中缺少secret参数")
             return jsonify({'error': 'Secret is required'}), 400
+        
+        # 记录请求信息（屏蔽敏感信息）
+        masked_secret = secret[:5] + '*****'
+        logger.debug(f"使用密钥: {masked_secret}")
         
         headers = {
             'Authorization': f'Bearer {secret}'
         }
         
+        logger.debug(f"向DirectLine API发送请求获取令牌，URL: {DIRECT_LINE_URL}/tokens/generate")
         response = requests.post(
             f'{DIRECT_LINE_URL}/tokens/generate',
-            headers=headers
+            headers=headers,
+            json={'User-Agent': 'NomadNavigator/1.0'}
         )
         
+        logger.debug(f"DirectLine API响应: {response.status_code}")
+        logger.debug(f"DirectLine API响应头: {dict(response.headers)}")
+        
         if response.status_code == 200:
-            return jsonify(response.json()), 200
+            token_data = response.json()
+            # 屏蔽令牌以避免泄露敏感信息
+            logger.info(f"成功获取令牌, 过期时间: {token_data.get('expires_in')}秒")
+            return jsonify(token_data), 200
         else:
-            logger.error(f"生成令牌失败: {response.status_code} - {response.text}")
-            return jsonify({'error': f'Failed to generate token: {response.text}'}), response.status_code
+            error_text = response.text
+            logger.error(f"生成令牌失败: {response.status_code} - {error_text}")
+            return jsonify({'error': f'Failed to generate token: {error_text}'}), response.status_code
     
     except Exception as e:
         logger.exception(f"生成令牌时出错: {e}")
@@ -51,18 +66,21 @@ def start_conversation():
     try:
         secret = request.headers.get('Authorization', '').replace('Bearer ', '')
         if not secret:
+            logger.error("请求中缺少Authorization头部")
             return jsonify({'error': 'Authorization header with Bearer token is required'}), 401
         
         headers = {
             'Authorization': f'Bearer {secret}'
         }
         
+        logger.debug(f"向DirectLine API发送请求启动会话")
         response = requests.post(
             f'{DIRECT_LINE_URL}/conversations',
             headers=headers
         )
         
         if response.status_code == 201:
+            logger.info("成功启动会话")
             return jsonify(response.json()), 201
         else:
             logger.error(f"启动会话失败: {response.status_code} - {response.text}")
@@ -78,6 +96,7 @@ def send_activity(conversation_id):
     try:
         secret = request.headers.get('Authorization', '').replace('Bearer ', '')
         if not secret:
+            logger.error("请求中缺少Authorization头部")
             return jsonify({'error': 'Authorization header with Bearer token is required'}), 401
         
         headers = {
@@ -95,6 +114,7 @@ def send_activity(conversation_id):
         )
         
         if response.status_code in [200, 201, 202]:
+            logger.info(f"成功发送活动")
             return jsonify(response.json()), response.status_code
         else:
             logger.error(f"发送活动失败: {response.status_code} - {response.text}")
@@ -110,6 +130,7 @@ def get_activities(conversation_id):
     try:
         secret = request.headers.get('Authorization', '').replace('Bearer ', '')
         if not secret:
+            logger.error("请求中缺少Authorization头部")
             return jsonify({'error': 'Authorization header with Bearer token is required'}), 401
         
         headers = {
@@ -121,11 +142,12 @@ def get_activities(conversation_id):
         if watermark:
             url += f'?watermark={watermark}'
         
+        logger.debug(f"获取活动，URL: {url}")
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
             activities = response.json()
-            logger.info(f"获取活动成功: {activities}")
+            logger.info(f"成功获取活动: {activities}")
             return jsonify(activities), 200
         else:
             logger.error(f"获取活动失败: {response.status_code} - {response.text}")

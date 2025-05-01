@@ -1,6 +1,7 @@
 # 核心框架
 flask[async]==2.2.3
 werkzeug==2.2.3  # 固定版本，避免兼容性问题
+flask-cors==3.0.10  # 跨域资源共享支持
 fastapi==0.95.1
 uvicorn==0.22.0
 python-dotenv==1.0.0

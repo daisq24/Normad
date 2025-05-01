@@ -6,7 +6,9 @@ NomadNavigator AI - 主应用入口
 
 import os
 import logging
+import asyncio
 from flask import Flask, request, jsonify, send_from_directory, redirect, send_file
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -29,6 +31,12 @@ logger.debug(f"静态文件index.html是否存在: {os.path.exists(os.path.join(
 # 创建Flask应用
 app = Flask(__name__, static_folder=static_folder)
 
+# 启用CORS
+CORS(app, resources={
+    r"/api/*": {"origins": "*"},
+    r"/static/*": {"origins": "*"}
+})
+
 # 创建Bot适配器
 from app.bot.bot_app import create_adapter, BOT_APP
 from app.utils.config import SETTINGS
@@ -38,6 +46,16 @@ from app.api.direct_line_proxy import direct_line_proxy_bp
 app.register_blueprint(direct_line_proxy_bp, url_prefix='/api/directline')
 
 ADAPTER = create_adapter()
+
+# 处理异步运行
+def run_async(coroutine):
+    """运行异步协程的辅助函数"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coroutine)
+    finally:
+        loop.close()
 
 @app.route("/api/messages", methods=["POST"])
 def messages():
@@ -53,11 +71,7 @@ def messages():
         logger.info(f"收到消息: {body}")
         
         # 运行异步处理
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        response = loop.run_until_complete(ADAPTER.process_activity(body, auth_header, BOT_APP.on_turn))
-        loop.close()
+        response = run_async(ADAPTER.process_activity(body, auth_header, BOT_APP.on_turn))
         
         logger.info(f"消息处理完成，响应: {response}")
         if response:
@@ -108,6 +122,41 @@ def serve_static(path):
 def health():
     """健康检查端点"""
     return jsonify({"status": "healthy", "version": "1.0.0"}), 200
+
+@app.route("/api/diagnostic", methods=["GET"])
+def diagnostic():
+    """诊断端点，返回服务配置和状态"""
+    try:
+        bot_config = {
+            "app_id": SETTINGS.MICROSOFT_APP_ID and SETTINGS.MICROSOFT_APP_ID[:5] + "..." or "未设置",
+            "app_password": SETTINGS.MICROSOFT_APP_PASSWORD and "已设置" or "未设置",
+            "openai_ready": bool(SETTINGS.AZURE_OPENAI_KEY and SETTINGS.AZURE_OPENAI_ENDPOINT),
+            "search_ready": bool(SETTINGS.AZURE_SEARCH_SERVICE and SETTINGS.AZURE_SEARCH_KEY),
+            "cosmos_ready": bool(SETTINGS.AZURE_COSMOS_KEY),
+            "debug_mode": SETTINGS.DEBUG,
+            "environment": os.environ.get("FLASK_ENV", "production"),
+            "endpoints": {
+                "messages": request.host_url + "api/messages",
+                "directline_token": request.host_url + "api/directline/tokens/generate",
+            }
+        }
+        return jsonify({
+            "status": "healthy", 
+            "version": "1.0.0",
+            "config": bot_config
+        }), 200
+    except Exception as e:
+        logger.exception("诊断端点错误")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+# 添加跨域预检请求支持
+@app.after_request
+def after_request(response):
+    """添加CORS头部到所有响应"""
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+    return response
 
 if __name__ == "__main__":
     # 获取端口
