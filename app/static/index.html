@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com https://directline.botframework.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data: blob:; media-src 'self' blob:; frame-src 'self' blob:;">
     <title>NomadNavigator AI - 数字游民的智能旅行伙伴</title>
     <style>
         body {
@@ -146,6 +146,22 @@
             statusElement.style.color = isError ? '#cc0000' : '#006600';
             console.log(message);
         }
+
+        // 修复form字段缺少id和name属性的问题
+        document.addEventListener('DOMContentLoaded', function() {
+            // 查找所有表单字段
+            const formFields = document.querySelectorAll('input, textarea, select');
+            formFields.forEach((field, index) => {
+                // 如果没有id属性，添加一个
+                if (!field.hasAttribute('id')) {
+                    field.setAttribute('id', `field_${index}_${Date.now()}`);
+                }
+                // 如果没有name属性，添加一个
+                if (!field.hasAttribute('name')) {
+                    field.setAttribute('name', field.getAttribute('id'));
+                }
+            });
+        });
 
         // 使用两步token流程而不是直接使用secret
         updateStatus('正在连接到Bot服务...');
