@@ -56,6 +56,7 @@
             height: 500px;
             margin: 20px 0;
             overflow: hidden;
+            position: relative;
         }
         footer {
             text-align: center;
@@ -65,6 +66,14 @@
         }
         #webchat {
             height: 100%;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        #simple-chat {
+            height: 100%;
+            width: 100%;
+            position: relative;
         }
         .chat-placeholder {
             display: none; /* 隐藏占位符，因为我们现在启用了真正的聊天功能 */
@@ -83,6 +92,80 @@
             margin: 10px 0;
             font-size: 14px;
             color: #333;
+        }
+        
+        /* 添加自定义聊天消息样式 */
+        .bot-message {
+            background-color: #F2F2F2;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin: 10px 0;
+            max-width: 80%;
+            float: left;
+            clear: both;
+            word-wrap: break-word;
+        }
+        
+        .user-message {
+            background-color: #0078D4;
+            color: white;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin: 10px 0;
+            max-width: 80%;
+            float: right;
+            clear: both;
+            word-wrap: break-word;
+        }
+        
+        /* 确保父容器清除浮动 */
+        #webchat:after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        .chat-input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ddd;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .chat-input-area button {
+            margin-left: 10px;
+            padding: 8px 15px;
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .chat-input-area button:hover {
+            background-color: #005a9e;
+        }
+
+        #chat-messages {
+            overflow-y: auto;
+            height: calc(100% - 60px);
+            padding: 10px 15px 60px 15px;
+            width: 100%;
+            box-sizing: border-box;
         }
     </style>
 </head>
@@ -114,7 +197,16 @@
         <div id="botStatus">正在连接到NomadNavigator AI...</div>
         <div class="chat-container">
             <!-- 真实聊天界面 -->
-            <div id="webchat"></div>
+            <div id="webchat">
+                <!-- 添加简单聊天表单 -->
+                <div id="simple-chat">
+                    <div id="chat-messages"></div>
+                    <div class="chat-input-area">
+                        <input type="text" id="user-message" placeholder="在这里输入消息...">
+                        <button id="send-message">发送</button>
+                    </div>
+                </div>
+            </div>
             
             <!-- 聊天界面占位符 -->
             <div class="chat-placeholder">
@@ -250,12 +342,128 @@
                 directLine.activity$.subscribe(
                     activity => {
                         logMessage('收到活动: ' + JSON.stringify(activity).substring(0, 150) + '...');
+                        
+                        // 专门处理Bot发来的消息
+                        if (activity.type === 'message' && activity.from && activity.from.id !== userId) {
+                            logMessage('收到机器人消息: ' + (activity.text || '').substring(0, 100) + '...');
+                            
+                            // 如果机器人响应里有错误信息，可以在这里处理
+                            if (activity.channelData && activity.channelData.error) {
+                                logError('机器人响应错误: ' + JSON.stringify(activity.channelData.error));
+                                updateStatus('接收机器人消息时出错', true);
+                            }
+                        }
                     },
                     error => {
                         logError('活动监听错误: ' + error.message);
+                        // 当发生错误时，尝试刷新令牌并重新连接
+                        setTimeout(() => {
+                            updateStatus('正在尝试重新连接...', false);
+                            getDirectLineToken();
+                        }, 5000);
                     }
                 );
                 
+                // 添加手动轮询机制，避免依赖WebSocket连接
+                function pollActivities(directLine, simpleChat) {
+                    let watermark = null;
+                    let conversationId = null;
+                    let pollingInterval = null;
+                    
+                    // 在第一次发送消息时获取conversationId
+                    const postSomething = setInterval(() => {
+                        // 如果已经获取到会话ID，则停止尝试
+                        if (conversationId) {
+                            clearInterval(postSomething);
+                            return;
+                        }
+                        
+                        // 发送一个隐藏的事件来获取会话ID
+                        directLine.postActivity({
+                            type: 'event',
+                            name: 'getConversation',
+                            from: { id: userId }
+                        }).subscribe(
+                            id => {
+                                // 成功获取到会话ID
+                                conversationId = id;
+                                logMessage('成功获取会话ID: ' + conversationId);
+                                clearInterval(postSomething);
+                                startPolling();
+                            },
+                            error => logError('无法获取会话ID: ' + error.message)
+                        );
+                    }, 1000); // 每秒尝试一次
+                    
+                    // 开始轮询消息
+                    function startPolling() {
+                        if (!conversationId) {
+                            logError('无法开始轮询：缺少会话ID');
+                            return;
+                        }
+                        
+                        // 定期轮询新消息
+                        pollingInterval = setInterval(() => {
+                            try {
+                                fetch(`https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities?watermark=${watermark || ''}`, {
+                                    method: 'GET',
+                                    headers: {
+                                        'Authorization': `Bearer ${directLine.token}`,
+                                        'Content-Type': 'application/json'
+                                    }
+                                })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`轮询活动失败: ${response.status}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    if (data && data.activities && data.activities.length > 0) {
+                                        // 更新watermark
+                                        watermark = data.watermark;
+                                        
+                                        // 处理新收到的活动
+                                        data.activities.forEach(activity => {
+                                            if (activity.type === 'message' && activity.from && activity.from.id !== userId) {
+                                                logMessage('轮询收到消息: ' + (activity.text || '').substring(0, 100));
+                                                
+                                                // 使用simpleChat显示消息
+                                                if (simpleChat && typeof simpleChat.addMessage === 'function') {
+                                                    simpleChat.addMessage(activity.text || '', false);
+                                                } else {
+                                                    // 手动添加消息到聊天界面
+                                                    const botMessage = document.createElement('div');
+                                                    botMessage.className = 'bot-message';
+                                                    botMessage.innerHTML = `<strong>AI:</strong> ${activity.text || ''}`;
+                                                    document.querySelector('#chat-messages').appendChild(botMessage);
+                                                    
+                                                    // 滚动到底部
+                                                    const chatMessages = document.querySelector('#chat-messages');
+                                                    if (chatMessages) {
+                                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                })
+                                .catch(error => {
+                                    logError('轮询失败: ' + error.message);
+                                });
+                            } catch (error) {
+                                logError('轮询出错: ' + error.message);
+                            }
+                        }, 3000); // 每3秒轮询一次
+                    }
+                    
+                    // 返回清理函数
+                    return function cleanup() {
+                        if (postSomething) clearInterval(postSomething);
+                        if (pollingInterval) clearInterval(pollingInterval);
+                    };
+                }
+
                 // 渲染Web Chat界面
                 window.WebChat.renderWebChat({
                     directLine: directLine,
@@ -272,6 +480,34 @@
                         rootWidth: '100%',
                     }
                 }, document.getElementById('webchat'));
+                
+                // 设置简单聊天界面
+                const simpleChat = setupSimpleChat(directLine, userId);
+
+                // 添加一条欢迎提示消息
+                simpleChat.addMessage('欢迎使用NomadNavigator AI! 请输入您的问题，例如"推荐几个适合数字游民的欧洲城市"');
+
+                // 当WebChat渲染完成后，获取并存储对话ID用于轮询
+                directLine.connectionStatus$.subscribe(status => {
+                    if (status === 2) { // 连接成功
+                        // 创建一个连接成功的消息，开始会话
+                        directLine.postActivity({
+                            type: 'event',
+                            name: 'startConversation',
+                            from: { id: userId }
+                        }).subscribe(
+                            conversationId => {
+                                logMessage('会话已开始，ID: ' + conversationId);
+                                // 启动轮询以确保消息能够接收
+                                const cleanupPolling = pollActivities(directLine, simpleChat);
+                                
+                                // 注册页面卸载时的清理函数
+                                window.addEventListener('beforeunload', cleanupPolling);
+                            },
+                            error => logError('开始会话失败: ' + error.message)
+                        );
+                    }
+                });
                 
             } catch (error) {
                 logError('初始化Web Chat出错: ' + error.message);
@@ -331,6 +567,74 @@
                     logError('发送欢迎事件出错: ' + error.message);
                 }
             }, 1000);
+        }
+
+        // 处理简单聊天功能
+        function setupSimpleChat(directLine, userId) {
+            const messageInput = document.getElementById('user-message');
+            const sendButton = document.getElementById('send-message');
+            const chatMessages = document.getElementById('chat-messages');
+            
+            // 添加消息到聊天界面
+            function addMessage(text, isUser = false) {
+                const messageEl = document.createElement('div');
+                messageEl.className = isUser ? 'user-message' : 'bot-message';
+                messageEl.innerHTML = `<strong>${isUser ? '您' : 'AI'}:</strong> ${text}`;
+                chatMessages.appendChild(messageEl);
+                
+                // 滚动到底部
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // 发送消息事件
+            function sendMessage() {
+                const text = messageInput.value.trim();
+                if (!text) return;
+                
+                // 添加用户消息到界面
+                addMessage(text, true);
+                
+                // 发送到Bot
+                directLine.postActivity({
+                    type: 'message',
+                    from: { id: userId },
+                    text: text
+                }).subscribe(
+                    id => {
+                        logMessage('消息已发送, ID: ' + id);
+                        // 清空输入框
+                        messageInput.value = '';
+                    },
+                    error => {
+                        logError('发送消息失败: ' + error.message);
+                        addMessage('发送消息失败，请重试', false);
+                    }
+                );
+            }
+            
+            // 绑定按钮事件
+            sendButton.addEventListener('click', sendMessage);
+            
+            // 绑定回车键发送
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // 监听Bot的响应
+            directLine.activity$.subscribe(
+                activity => {
+                    if (activity.type === 'message' && activity.from && activity.from.id !== userId) {
+                        // 添加Bot消息到界面
+                        addMessage(activity.text || '', false);
+                    }
+                }
+            );
+            
+            return {
+                addMessage
+            };
         }
     </script>
 </body>
