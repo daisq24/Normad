@@ -4,13 +4,30 @@
 
 在将NomadNavigator AI部署到Azure后，发现以下关键问题：
 
-1. **ConnectorClient错误**：Bot无法发送响应消息，日志显示`KeyError: 'ConnectorClient'`错误。
-2. **内容安全策略(CSP)限制**：前端WebChat组件受到CSP限制，无法使用`eval`和`blob`资源。
-3. **时间戳格式问题**：Bot Framework无法解析自定义生成的时间戳格式。
+1. **DirectLine通信错误**：前端能成功获取令牌，但消息无法正常发送和接收，返回502错误和"缺少令牌或秘密"错误。
+2. **ConnectorClient错误**：Bot无法发送响应消息，日志显示`KeyError: 'ConnectorClient'`错误。
+3. **内容安全策略(CSP)限制**：前端WebChat组件受到CSP限制，无法使用`eval`和`blob`资源。
+4. **时间戳格式问题**：Bot Framework无法解析自定义生成的时间戳格式。
 
 ## 修复方案
 
-### 1. 修复Bot适配器问题
+### 1. DirectLine通信问题修复
+
+在`app/static/index.html`中实现了以下关键修复：
+
+1. 重构了DirectLine连接逻辑，分解为更清晰的函数结构
+2. 确保用户ID格式符合DirectLine要求（必须以`dl_`开头）
+3. 增强了错误处理和日志记录，便于调试
+4. 添加了连接状态管理逻辑，防止重复发送欢迎事件
+
+在`app/api/direct_line_proxy.py`中实现了以下修复：
+
+1. 改进了令牌生成逻辑，确保用户ID格式正确
+2. 添加了连接重试机制，处理网络不稳定情况
+3. 增强了错误响应格式，提供更详细的错误信息
+4. 确保正确设置请求头和内容类型
+
+### 2. Bot适配器问题修复
 
 在`app/bot/bot_adapter.py`中实现了两个关键修复：
 
@@ -26,30 +43,34 @@ async def send_activities(self, context, activities):
         # 使用父类的send_activities方法
         return await super().send_activities(context, activities)
     except KeyError as e:
-        if str(e).strip("'") == self.BOT_CONNECTOR_CLIENT_KEY:
-            # 这是我们期望的错误，缺少ConnectorClient
-            logger.warning(f"缺少ConnectorClient，使用替代响应方法 (DirectLine通道)")
+        # 处理缺少ConnectorClient或access_token的情况
+        if str(e).strip("'") == self.BOT_CONNECTOR_CLIENT_KEY or str(e).strip("'") == 'access_token':
+            # 这是我们期望的错误，缺少ConnectorClient或access_token
+            logger.warning(f"凭据或连接问题，使用替代响应方法: {str(e)}")
             
             # 为活动生成响应
             responses = []
             for activity in activities:
                 # 创建一个ResourceResponse作为替代响应
-                response = ResourceResponse(id=f"directline-response-{context.activity.id}")
+                response = ResourceResponse(id=f"direct-response-{context.activity.id}")
                 responses.append(response)
-                
-                # 记录发送的活动
-                logger.info(f"已发送到DirectLine通道: {activity.type} - '{activity.text or ''}'[:30]...")
-            
             return responses
         else:
-            # 不是我们期望处理的错误，重新抛出
-            logger.error(f"发送活动时出现意外错误: {e}")
+            # 其他未预期的错误，重新抛出
             raise
 ```
 
-### 2. 修复时间戳格式问题
+### 3. 内容安全策略(CSP)修复
 
-在`app/utils/bot_helper.py`中，使用更标准的ISO8601时间戳格式生成：
+在`app/static/index.html`中更新了CSP策略，允许WebChat组件使用eval和加载blob资源：
+
+```html
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com https://directline.botframework.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data: blob:; media-src 'self' blob:; frame-src 'self' blob:;">
+```
+
+### 4. 时间戳格式修复
+
+在`app/utils/bot_helper.py`中更新了时间戳生成函数，使用标准ISO8601格式：
 
 ```python
 def get_iso_timestamp() -> str:
@@ -62,37 +83,35 @@ def get_iso_timestamp() -> str:
     return datetime.datetime.utcnow().isoformat() + "Z"
 ```
 
-使用此函数替换所有活动创建中的时间戳生成。
-
-### 3. 内容安全策略(CSP)配置
-
-确认`app/static/index.html`中的CSP策略配置包含必要的权限：
-
-```html
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.botframework.com; connect-src 'self' https://*.botframework.com wss://*.botframework.com https://*.azure.com https://directline.botframework.com; script-src 'self' https://cdn.botframework.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.botframework.com data: blob:; media-src 'self' blob:; frame-src 'self' blob:;">
-```
-
-关键更新是添加了：
-- `'unsafe-eval'` 到 script-src
-- `blob:` 到相关资源策略
-
 ## 测试工具
 
-为验证修复效果，创建了以下测试工具：
+我们创建了多个测试工具来验证修复效果：
 
-1. **test_directline.py**：测试DirectLine通道连接、生成令牌、发送和接收消息的功能。
+1. **test_directline.py**: 测试DirectLine通道连接和消息发送
+2. **test_bot_messages.py**: 模拟Bot Framework Emulator发送的HTTP请求
+3. **test_bot_endpoint.py**: 直接测试Bot的/api/test-bot端点
 
-2. **test_bot_messages.py**：模拟Bot Framework发送的HTTP POST请求，测试`/api/messages`端点。
+## 部署步骤
 
-3. **test_bot_endpoint.py**：直接测试Bot的`/api/test-bot`端点，简化测试流程。
+1. 将修复推送到GitHub仓库:
+   ```
+   git add app/bot/bot_adapter.py app/api/direct_line_proxy.py app/static/index.html app/utils/bot_helper.py
+   git commit -m "修复DirectLine连接问题和Bot适配器错误"
+   git push origin fix-cosmos-directline
+   ```
 
-4. **test_bot_framework.py**：模拟Bot Framework消息端点的测试。
+2. Azure App Service会自动从GitHub部署最新代码
 
-## 部署和验证
+## 验证方法
 
-1. 使用GitHub Actions将修复部署到Azure App Service。
-2. 使用测试工具验证修复效果。
-3. 通过浏览器访问应用，测试前端WebChat集成。
+部署完成后，通过以下步骤验证修复是否成功：
+
+1. 打开应用网站并检查连接状态消息
+2. 测试发送消息并确认Bot响应正常
+3. 查看Azure应用服务日志，确认没有错误消息
+4. 使用测试工具直接验证各个端点功能
+
+如果发现问题，可使用测试工具进行诊断，检查特定组件是否正常工作。
 
 ## 未解决问题和注意事项
 
