@@ -8,6 +8,7 @@ import json
 import logging
 import requests
 from flask import Blueprint, request, jsonify, current_app
+import time
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -28,28 +29,31 @@ def generate_token():
             logger.error("请求中缺少secret参数")
             return jsonify({'error': 'Secret is required'}), 400
         
-        # 记录请求信息（屏蔽敏感信息）
-        masked_secret = secret[:5] + '*****'
-        logger.debug(f"使用密钥: {masked_secret}")
+        # 添加用户ID参数，如果请求中没有，则生成一个
+        user_id = request.json.get('user_id', f'dl-user-{int(time.time())}')
         
         headers = {
             'Authorization': f'Bearer {secret}'
+        }
+        
+        # 添加用户参数到请求
+        token_params = {
+            'User-Agent': 'NomadNavigator/1.0',
+            'user': user_id
         }
         
         logger.debug(f"向DirectLine API发送请求获取令牌，URL: {DIRECT_LINE_URL}/tokens/generate")
         response = requests.post(
             f'{DIRECT_LINE_URL}/tokens/generate',
             headers=headers,
-            json={'User-Agent': 'NomadNavigator/1.0'}
+            json=token_params
         )
         
         logger.debug(f"DirectLine API响应: {response.status_code}")
-        logger.debug(f"DirectLine API响应头: {dict(response.headers)}")
         
         if response.status_code == 200:
             token_data = response.json()
-            # 屏蔽令牌以避免泄露敏感信息
-            logger.info(f"成功获取令牌, 过期时间: {token_data.get('expires_in')}秒")
+            logger.info("成功获取令牌")
             return jsonify(token_data), 200
         else:
             error_text = response.text

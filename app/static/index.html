@@ -163,7 +163,10 @@
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ secret: directLineSecret })
+            body: JSON.stringify({ 
+                secret: directLineSecret,
+                user_id: userId // 添加用户ID参数
+            })
         })
         .then(response => {
             console.log('令牌请求响应状态:', response.status);
